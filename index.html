@@ -1152,12 +1152,27 @@ p8_update_layout();
 </div> <!-- body_0 -->
 <script>
 window.addEventListener("load", () => {
-  // Garante o diretório
-  try { FS.mkdir('/picotron/appdata'); } catch (e) { /* já existe */ }
+  // 1) aguarda até que o diretório /picotron exista (montagem do IDBFS pelo Picotron)
+  waitForMount('/picotron', () => {
+    // 2) garante o subdiretório appdata
+    try { FS.mkdir('/picotron/appdata'); } catch (e) { /* já existe */ }
 
-  // Aguarda até que o arquivo exista
-  waitForFile('/picotron/appdata/dados.txt', startDebugLoop);
+    // 3) agora aguarda dados.txt (criado pelo Picotron no primeiro sync)
+    waitForFile('/picotron/appdata/dados.txt', startDebugLoop);
+  });
 });
+
+function waitForMount(path, cb) {
+  const iv = setInterval(() => {
+    try {
+      FS.stat(path);
+      clearInterval(iv);
+      cb();
+    } catch (e) {
+      // ainda não montou
+    }
+  }, 50);
+}
 
 function waitForFile(path, cb) {
   const iv = setInterval(() => {
@@ -1172,7 +1187,6 @@ function waitForFile(path, cb) {
 }
 
 function startDebugLoop() {
-  // Cria painel
   const container = document.createElement("div");
   document.body.appendChild(container);
 
@@ -1215,7 +1229,8 @@ function startDebugLoop() {
       FS.writeFile('/picotron/appdata/dados.txt', data, {encoding:'binary'});
       FS.syncfs(true, err => { if (err) console.error('Erro ao salvar:', err); });
     } catch (e) {
-      console.error("Erro ao escrever dados:", e);
+      // ignora EEXIST aqui, pois pode ocorrer se já montou
+      if (e.errno !== 17) console.error("Erro ao escrever dados:", e);
     }
   }, 10);
 }
