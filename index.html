@@ -1230,7 +1230,7 @@ function startDebugLoop() {
 
     const data = new TextEncoder().encode(texto);
     try {
-      FS.writeFile('/picotron/appdata/dados.txt', data, {encoding:'binary'});
+      FS.writeFile('/picotron/appdata/touch.txt', data, {encoding:'binary'});
       FS.syncfs(true, err => { if (err) console.error('Erro ao salvar:', err); });
     } catch (e) {
       if (e.errno !== 17) console.error("Erro ao escrever dados:", e);
