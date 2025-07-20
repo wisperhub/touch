@@ -1152,27 +1152,32 @@ p8_update_layout();
 </div> <!-- body_0 -->
 <script>
 window.addEventListener("load", () => {
-  // 1) aguarda até que o diretório /picotron exista (montagem do IDBFS pelo Picotron)
-  waitForMount('/picotron', () => {
-    // 2) garante o subdiretório appdata
-    try { FS.mkdir('/picotron/appdata'); } catch (e) { /* já existe */ }
+  // 1) Intercepta chamadas a FS.mount p/ ignorar EEXIST
+  (function patchMount() {
+    const origMount = FS.mount;
+    FS.mount = function(type, opts, mountpoint) {
+      try {
+        return origMount.call(this, type, opts, mountpoint);
+      } catch (e) {
+        if (e.errno === 17 && e.code === 'EEXIST') {
+          console.warn(`FS.mount ignorou EEXIST em ${mountpoint}`);
+          return;
+        }
+        throw e;
+      }
+    };
+  })();
 
-    // 3) agora aguarda dados.txt (criado pelo Picotron no primeiro sync)
+  // 2) Aguarda o runtime Emscripten (Picotron) ficar pronto
+  Module.onRuntimeInitialized = () => {
+    // 3) Garante subdiretório (agora sem conflito de montagem)
+    try { FS.mkdir('/picotron/appdata'); }
+    catch (e) { /* já existia */ }
+
+    // 4) Aguarda o arquivo ser criado no primeiro sync do próprio Picotron
     waitForFile('/picotron/appdata/dados.txt', startDebugLoop);
-  });
+  };
 });
-
-function waitForMount(path, cb) {
-  const iv = setInterval(() => {
-    try {
-      FS.stat(path);
-      clearInterval(iv);
-      cb();
-    } catch (e) {
-      // ainda não montou
-    }
-  }, 50);
-}
 
 function waitForFile(path, cb) {
   const iv = setInterval(() => {
@@ -1192,27 +1197,25 @@ function startDebugLoop() {
 
   const canvas = document.getElementById("canvas");
   const VW = 480, VH = 270;
-  let scale = 1, offsetX = 0, offsetY = 0, toques = [];
+  let scale=1, offsetX=0, offsetY=0, toques=[];
 
   function updateScale() {
     const r = canvas.getBoundingClientRect();
     scale = Math.min(r.width/VW, r.height/VH);
     offsetX = r.left + (r.width - VW*scale)/2;
-    offsetY = r.top + (r.height - VH*scale)/2;
+    offsetY = r.top  + (r.height- VH*scale)/2;
   }
-
   window.addEventListener("resize", updateScale);
   updateScale();
 
   function registrarToques(e) {
     toques = [];
     for (let t of e.touches) {
-      const x = ((t.clientX - offsetX)/scale).toFixed(2);
-      const y = ((t.clientY - offsetY)/scale).toFixed(2);
+      const x = ((t.clientX-offsetX)/scale).toFixed(2);
+      const y = ((t.clientY-offsetY)/scale).toFixed(2);
       toques.push({x, y});
     }
   }
-
   ['touchstart','touchmove','touchend'].forEach(evt =>
     canvas.addEventListener(evt, e => {
       e.preventDefault();
@@ -1224,12 +1227,12 @@ function startDebugLoop() {
     updateScale();
     const texto = toques.map(t => `${t.x},${t.y}`).join(",") || "(sem toques)";
     container.textContent = texto;
+
     const data = new TextEncoder().encode(texto);
     try {
       FS.writeFile('/picotron/appdata/dados.txt', data, {encoding:'binary'});
       FS.syncfs(true, err => { if (err) console.error('Erro ao salvar:', err); });
     } catch (e) {
-      // ignora EEXIST aqui, pois pode ocorrer se já montou
       if (e.errno !== 17) console.error("Erro ao escrever dados:", e);
     }
   }, 10);
